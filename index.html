@@ -26,6 +26,9 @@ button:disabled{opacity:.4;cursor:wait}
 #grain{position:fixed;inset:-50%;z-index:1;pointer-events:none;opacity:.09;animation:g .5s steps(4) infinite}
 @keyframes g{0%{transform:translate(0,0)}25%{transform:translate(-6%,4%)}50%{transform:translate(5%,-5%)}75%{transform:translate(-3%,-6%)}100%{transform:translate(0,0)}}
 #dbg{position:fixed;left:14px;top:14px;z-index:6;font:12px/1.4 monospace;color:#9f9;background:#000b;padding:8px;max-width:560px;white-space:pre-wrap;display:none;pointer-events:none}
+/* debug: screen-edge arrow that points toward Verity when he's off-screen */
+#varrow{position:fixed;left:0;top:0;z-index:6;display:none;pointer-events:none;color:#f44;font:bold 12px/1 "Courier New",monospace;text-shadow:0 0 4px #000;white-space:nowrap}
+#varrow i{display:block;width:0;height:0;margin:0 auto 3px;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #f44;filter:drop-shadow(0 0 3px #000)}
 </style>
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
@@ -35,6 +38,7 @@ button:disabled{opacity:.4;cursor:wait}
 <div id="hud"><span id="obj"></span><i id="bar"><b id="st"></b></i></div>
 <canvas id="map" width="150" height="150"></canvas>
 <div id="cross"></div><div id="msg"></div><div id="red"></div><div id="vig"></div><div id="grain"></div>
+<div id="varrow"><i id="vtri"></i><span id="vlbl"></span></div>
 <div class="scr" id="scr"><h1 id="t">Verity</h1><p id="m"></p><button id="b" disabled>loading 0%</button></div>
 <pre id="dbg"></pre>
 
@@ -49,6 +53,7 @@ const ARMS_WIDTH=0.7, ARMS_CENTER=[0,-0.42,-0.55], ARMS_ROT=[0,0,0]; // auto-fit
 const VERITY_FILE='veritytm.glb', VERITY_CLIP='verity.mdl|verity.mdl/@CWalk';
 const VERITY_H=2.4, VERITY_YAW=0;   // standing height in metres (he crouches while walking), extra facing offset (radians; facing is auto-detected from his feet)
 const N=12, T=3;                                          // maze cells per side, tile size
+const DEBUG_GODMODE=false;          // false: debug mode (F3) only adds tracers, everything else plays normally. true: also makes Verity unable to catch you while debugging
 /* ================================================================= */
 
 const $=id=>document.getElementById(id);
@@ -155,6 +160,46 @@ const V=new THREE.Group();scene.add(V);
 V.add(new THREE.PointLight(0xff2222,5,7,2));V.children[0].position.y=1.5;
 let vMix=null,vYaw=0;
 
+/* ---------- debug tracers: always-visible (through walls) markers showing where Verity is ---------- */
+const TR=new THREE.Group();TR.visible=false;scene.add(TR);
+const trMat=(c,o)=>new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,depthTest:false,depthWrite:false,fog:false,side:THREE.DoubleSide});
+const trTag=(m,ro=999)=>{m.renderOrder=ro;m.frustumCulled=false;return m};
+const trLine=trTag(new THREE.Mesh(new THREE.CylinderGeometry(.015,.015,1,6).rotateX(Math.PI/2),trMat(0xff3333,.75))); // player -> Verity line (cylinder along +Z so it has real thickness)
+const trBeam=trTag(new THREE.Mesh(new THREE.CylinderGeometry(.1,.1,12,10,1,true),trMat(0xff3333,.5)));               // tall beacon you can spot over the walls
+const trRing=trTag(new THREE.Mesh(new THREE.RingGeometry(.8,1,32).rotateX(-Math.PI/2),trMat(0xff3333,.85)));          // floor ring under his feet
+const trOrb=trTag(new THREE.Mesh(new THREE.SphereGeometry(.22,12,8),trMat(0xffaa22,.95)));                          // marker at chest height
+TR.add(trLine,trBeam,trRing,trOrb);
+const TRAIL=80,trailQ=[];let trailT=0;                                  // breadcrumb trail of where he has been (sampled every .2s)
+const trailPts=new Float32Array((TRAIL+1)*3);
+const trail=trTag(new THREE.Line(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(trailPts,3)),new THREE.LineBasicMaterial({color:0xff8844,transparent:true,opacity:.85,depthTest:false,depthWrite:false,fog:false})),998);
+trail.geometry.setDrawRange(0,0);TR.add(trail);
+const varrow=$('varrow');
+const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_p=new THREE.Vector3();
+function updateTracers(){
+ const vx=V.position.x,vz=V.position.z;
+ _a.set(P.x,1,P.z);_b.set(vx,1.2,vz);const len=_a.distanceTo(_b);
+ trLine.position.copy(_a).add(_b).multiplyScalar(.5);trLine.scale.z=Math.max(len,.001);if(len>.01)trLine.lookAt(_b);
+ const pulse=1+.15*Math.sin(performance.now()/150);
+ trBeam.position.set(vx,4.5,vz);
+ trRing.position.set(vx,.06,vz);trRing.scale.setScalar(pulse);
+ trOrb.position.set(vx,1.2,vz);trOrb.scale.setScalar(pulse);
+ // trail
+ const n=trailQ.length;
+ for(let i=0;i<n;i++){trailPts[i*3]=trailQ[i][0];trailPts[i*3+1]=.15;trailPts[i*3+2]=trailQ[i][1]}
+ trailPts[n*3]=vx;trailPts[n*3+1]=.15;trailPts[n*3+2]=vz;
+ trail.geometry.setDrawRange(0,n+1);trail.geometry.attributes.position.needsUpdate=true;
+ // screen-edge arrow when he's off-screen / behind you
+ _p.set(vx,1.2,vz).project(cam);
+ const behind=_p.z>1,off=behind||Math.abs(_p.x)>.92||Math.abs(_p.y)>.92;
+ if(off){let sx=behind?-_p.x:_p.x,sy=behind?-_p.y:_p.y;const m=Math.max(Math.abs(sx),Math.abs(sy),1e-6);
+  sx/=m;sy/=m;const k=.86;sx*=k;sy*=k;
+  const px=(sx*.5+.5)*innerWidth,py=(-sy*.5+.5)*innerHeight;
+  varrow.style.display='block';
+  varrow.style.transform=`translate(${px}px,${py}px) translate(-50%,-50%)`;
+  $('vtri').style.transform=`rotate(${Math.atan2(sx*innerWidth,sy*innerHeight)}rad)`;
+  $('vlbl').textContent=len.toFixed(0)+'m'}
+ else varrow.style.display='none'}
+
 /* ---------- loading models ---------- */
 const mgr=new THREE.LoadingManager();const gl=new GLTFLoader(mgr);
 mgr.onProgress=(u,i,n)=>{$('b').textContent='loading '+Math.round(i/n*100)+'%'};
@@ -254,10 +299,12 @@ function tick(dt){
   if(pb*Math.sin(bob)<0)tone(110,50,.09,.07,'triangle')}
  cam.position.set(P.x,1.6+(mv?Math.sin(bob)*.04:0),P.z);cam.rotation.set(pitch,yaw,0);
 
- const vd=DEBUG?99:updateVerity(dt);
- if(!DEBUG&&vd<1.2&&vMode==='chase')return die();
+ const vd=updateVerity(dt);
+ if(!(DEBUG&&DEBUG_GODMODE)&&vd<1.2&&vMode==='chase')return die();
+ // sample Verity's position for the debug trail
+ if((trailT+=dt)>.2){trailT=0;trailQ.push([V.position.x,V.position.z]);if(trailQ.length>TRAIL)trailQ.shift()}
  if(vMode==='chase'&&prevMode!=='chase')tone(110,40,.9,.5,'sawtooth');prevMode=vMode;
- vf-=dt;if(!DEBUG&&vd<20&&vf<=0){tone(70,35,.15,Math.max(.02,.5*(1-vd/20)),'triangle');vf=vMode==='chase'?.32:.6}
+ vf-=dt;if(vd<20&&vf<=0){tone(70,35,.15,Math.max(.02,.5*(1-vd/20)),'triangle');vf=vMode==='chase'?.32:.6}
  if(Math.random()<dt*.15)tone(rnd(1800,2600),1100,.06,.03);
  cam.fov+=((sprinting?82:75)-cam.fov)*Math.min(1,dt*6);cam.updateProjectionMatrix();
 
@@ -281,29 +328,34 @@ function tick(dt){
  if(exp[exit[1]][exit[0]]){mc.fillStyle=got>=GOAL?'#2f6':'#f33';mc.fillRect(exit[0]*s,exit[1]*s,s,s)}
  mc.fillStyle='#3fe';cores.forEach(c=>{if(exp[c.tz][c.tx])mc.fillRect(c.tx*s+1,c.tz*s+1,s-2,s-2)});
  const ux=P.x/T*s+s/2,uz=P.z/T*s+s/2;mc.fillStyle='#fff';mc.fillRect(ux-2,uz-2,4,4);
- mc.strokeStyle='#fff';mc.beginPath();mc.moveTo(ux,uz);mc.lineTo(ux-Math.sin(yaw)*9,uz-Math.cos(yaw)*9);mc.stroke()}
+ mc.strokeStyle='#fff';mc.beginPath();mc.moveTo(ux,uz);mc.lineTo(ux-Math.sin(yaw)*9,uz-Math.cos(yaw)*9);mc.stroke();
+ // debug: Verity is always shown on the minimap (even in unexplored areas), with a tracer line + his trail
+ if(DEBUG){const vx=V.position.x/T*s+s/2,vz=V.position.z/T*s+s/2;
+  mc.strokeStyle='#ff884488';mc.beginPath();trailQ.forEach(([x,z],i)=>{const a=x/T*s+s/2,b=z/T*s+s/2;i?mc.lineTo(a,b):mc.moveTo(a,b)});mc.lineTo(vx,vz);mc.stroke();
+  mc.strokeStyle='#f33';mc.beginPath();mc.moveTo(ux,uz);mc.lineTo(vx,vz);mc.stroke();
+  mc.fillStyle='#f33';mc.fillRect(vx-3,vz-3,6,6);mc.strokeRect(vx-6,vz-6,12,12)}}
 
-/* ---------- debug mode: no animations (default pose), Verity frozen & harmless, bright lights ---------- */
-function setDebug(on){DEBUG=on;
- for(const r of [armsRig,verRig])if(r){r.mix.stopAllAction();if(!on&&r.act){r.act.reset().setLoop(THREE.LoopRepeat,Infinity).play();r.mix.update(0)}}
- amb.intensity=on?2.5:.5;scene.fog.density=on?.03:.11;$('dbg').style.display=on?'block':'none';
- if(armsRig)placeArms();if(verRig)placeVerity();
- if(on){const tx=P.x-Math.sin(yaw)*T,tz=P.z-Math.cos(yaw)*T;
-  const o=opens.reduce((a,b)=>Math.hypot(b[0]*T-tx,b[1]*T-tz)<Math.hypot(a[0]*T-tx,a[1]*T-tz)?b:a);
-  V.position.set(o[0]*T,0,o[1]*T);vYaw=Math.atan2(P.x-V.position.x,P.z-V.position.z);V.rotation.y=vYaw}}
+/* ---------- debug mode (F3): tracers only ---------- */
+function setDebug(on){DEBUG=on;TR.visible=on;$('dbg').style.display=on?'block':'none';if(!on)varrow.style.display='none'}
 addEventListener('keydown',e=>{if(e.code==='F3'){e.preventDefault();setDebug(!DEBUG)}});
-const dbgText=()=>`DEBUG (F3 toggles) - animations OFF, Verity frozen, no death\narms:   ${info.arms}\nverity: ${info.verity}\nVerity ${V.position.x.toFixed(1)},${V.position.z.toFixed(1)}  Player ${P.x.toFixed(1)},${P.z.toFixed(1)}`;
+const dbgText=()=>{
+ const dx=V.position.x-P.x,dz=V.position.z-P.z;
+ let rel=Math.atan2(-dx,-dz)-yaw;rel=Math.atan2(Math.sin(rel),Math.cos(rel));   // + = to your left
+ const deg=Math.abs(rel*57.3)|0,dir=deg<10?'ahead':deg>150?'behind you':deg+'deg '+(rel>0?'left':'right');
+ return `DEBUG (F3 toggles)${DEBUG_GODMODE?' - god mode':''}\nVerity ${V.position.x.toFixed(1)},${V.position.z.toFixed(1)}  Player ${P.x.toFixed(1)},${P.z.toFixed(1)}\nTRACER  dist ${Math.hypot(dx,dz).toFixed(1)}m  bearing ${dir}  mode ${vMode}`}
 
 /* ---------- main loop ---------- */
 const clock=new THREE.Clock();
 $('b').disabled=false;$('b').textContent='begin';
 cam.position.set(P.x,1.6,P.z);cam.rotation.set(0,yaw,0);
+for(const r of [armsRig,verRig])if(r?.act){r.act.reset().setLoop(THREE.LoopRepeat,Infinity).play();r.mix.update(0)}
+if(armsRig)placeArms();if(verRig)placeVerity();
 setDebug(DEBUG);
 R.setAnimationLoop(()=>{
  const dt=Math.min(clock.getDelta(),.05);aMix?.update(dt);vMix?.update(dt);
  if(state==='play')tick(dt);
  else if(state==='dead'){deadT+=dt;cam.position.set(P.x+rnd(-.03,.03),1.6+rnd(-.03,.03),P.z+rnd(-.03,.03));cam.lookAt(V.position.x,1.5,V.position.z)}
- if(DEBUG)$('dbg').textContent=dbgText();
+ if(DEBUG){updateTracers();$('dbg').textContent=dbgText()}
  R.render(scene,cam)});
 </script>
 </body>
