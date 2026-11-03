@@ -27,8 +27,10 @@ button:disabled{opacity:.4;cursor:wait}
 @keyframes g{0%{transform:translate(0,0)}25%{transform:translate(-6%,4%)}50%{transform:translate(5%,-5%)}75%{transform:translate(-3%,-6%)}100%{transform:translate(0,0)}}
 #dbg{position:fixed;left:14px;top:14px;z-index:6;font:12px/1.4 monospace;color:#9f9;background:#000b;padding:8px;max-width:560px;white-space:pre-wrap;display:none;pointer-events:none}
 /* debug: screen-edge arrow that points toward Verity when he's off-screen */
-#varrow{position:fixed;left:0;top:0;z-index:6;display:none;pointer-events:none;color:#f44;font:bold 12px/1 "Courier New",monospace;text-shadow:0 0 4px #000;white-space:nowrap}
-#varrow i{display:block;width:0;height:0;margin:0 auto 3px;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #f44;filter:drop-shadow(0 0 3px #000)}
+#varrow,.carrow{position:fixed;left:0;top:0;z-index:6;display:none;pointer-events:none;color:#f44;font:bold 12px/1 "Courier New",monospace;text-shadow:0 0 4px #000;white-space:nowrap}
+#varrow i,.carrow i{display:block;width:0;height:0;margin:0 auto 3px;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #f44;filter:drop-shadow(0 0 3px #000)}
+.carrow{color:#3fe}
+.carrow i{border-bottom-color:#3fe}
 </style>
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
@@ -133,12 +135,18 @@ const pillar=new THREE.Mesh(new THREE.CylinderGeometry(.9,.9,3.4,24,1,true),new 
 pillar.position.set(exit[0]*T,1.7,exit[1]*T);scene.add(pillar);
 const exitLight=new THREE.PointLight(0xff2222,12,12,2);exitLight.position.set(exit[0]*T,1.5,exit[1]*T);scene.add(exitLight);
 const cores=[];
-for(let tries=0;cores.length<5&&tries<3000;tries++){
- const c=opens[Math.random()*opens.length|0];
- if(sm[c[1]][c[0]]<8||em[c[1]][c[0]]<6||cores.some(o=>Math.abs(o.tx-c[0])+Math.abs(o.tz-c[1])<8))continue;
+// a core may only spawn in an open maze cell whose centre is not solid
+const coreOK=c=>g[c[1]]?.[c[0]]===0&&!solid(c[0]*T,c[1]*T);
+const addCore=c=>{
  const m=new THREE.Mesh(new THREE.CylinderGeometry(.11,.11,.38,16),new THREE.MeshStandardMaterial({color:0x113333,emissive:0x33ffee,emissiveIntensity:1.4,roughness:.3,metalness:.4}));
  m.position.set(c[0]*T,1.1,c[1]*T);m.tx=c[0];m.tz=c[1];
- const l=new THREE.PointLight(0x33ffee,6,9,2);m.add(l);scene.add(m);cores.push(m)}
+ const l=new THREE.PointLight(0x33ffee,6,9,2);m.add(l);scene.add(m);cores.push(m)};
+// pass 1 uses the original spacing rules; later passes only relax them if the maze is too small to fit 5 cores
+for(const[sep,minStart,minExit]of[[8,8,6],[5,4,3],[2,1,1]])
+ for(let tries=0;cores.length<5&&tries<3000;tries++){
+  const c=opens[Math.random()*opens.length|0];
+  if(!coreOK(c)||sm[c[1]][c[0]]<minStart||em[c[1]][c[0]]<minExit||cores.some(o=>Math.abs(o.tx-c[0])+Math.abs(o.tz-c[1])<sep))continue;
+  addCore(c)}
 const GOAL=cores.length;let got=0;
 
 /* ---------- wall decals + floor debris ---------- */
@@ -174,7 +182,25 @@ const trailPts=new Float32Array((TRAIL+1)*3);
 const trail=trTag(new THREE.Line(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(trailPts,3)),new THREE.LineBasicMaterial({color:0xff8844,transparent:true,opacity:.85,depthTest:false,depthWrite:false,fog:false})),998);
 trail.geometry.setDrawRange(0,0);TR.add(trail);
 const varrow=$('varrow');
-const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_p=new THREE.Vector3();
+const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_c=new THREE.Vector3(),_p=new THREE.Vector3();
+// core tracers: cyan beacon + floor ring + orb + edge arrow on every uncollected core, and a line to the nearest one
+const trCoreLine=trTag(new THREE.Mesh(new THREE.CylinderGeometry(.01,.01,1,6).rotateX(Math.PI/2),trMat(0x33ffee,.6)));TR.add(trCoreLine);
+{const bg=new THREE.CylinderGeometry(.08,.08,12,10,1,true),rg=new THREE.RingGeometry(.5,.65,32).rotateX(-Math.PI/2),og=new THREE.SphereGeometry(.16,12,8),bm=trMat(0x33ffee,.45),rm=trMat(0x33ffee,.85),om=trMat(0xaafff6,.95);
+ cores.forEach(c=>{const tr=new THREE.Group();
+  tr.add(trTag(new THREE.Mesh(bg,bm)),trTag(new THREE.Mesh(rg,rm)),trTag(new THREE.Mesh(og,om)));
+  tr.children[0].position.y=4.5;tr.children[1].position.y=.06;TR.add(tr);c.tr=tr;
+  const el=document.createElement('div');el.className='carrow';el.innerHTML='<i></i><span></span>';document.body.appendChild(el);c.arrow=el})}
+// positions an edge-of-screen arrow toward a world point (hidden while the point is on-screen)
+function placeArrow(el,pos){
+ _p.copy(pos).project(cam);
+ const behind=_p.z>1,off=behind||Math.abs(_p.x)>.92||Math.abs(_p.y)>.92;
+ if(!off){el.style.display='none';return}
+ let sx=behind?-_p.x:_p.x,sy=behind?-_p.y:_p.y;const m=Math.max(Math.abs(sx),Math.abs(sy),1e-6);
+ sx=sx/m*.86;sy=sy/m*.86;
+ el.style.display='block';
+ el.style.transform=`translate(${(sx*.5+.5)*innerWidth}px,${(-sy*.5+.5)*innerHeight}px) translate(-50%,-50%)`;
+ el.firstElementChild.style.transform=`rotate(${Math.atan2(sx*innerWidth,sy*innerHeight)}rad)`;
+ el.lastElementChild.textContent=Math.hypot(pos.x-P.x,pos.z-P.z).toFixed(0)+'m'}
 function updateTracers(){
  const vx=V.position.x,vz=V.position.z;
  _a.set(P.x,1,P.z);_b.set(vx,1.2,vz);const len=_a.distanceTo(_b);
@@ -188,17 +214,14 @@ function updateTracers(){
  for(let i=0;i<n;i++){trailPts[i*3]=trailQ[i][0];trailPts[i*3+1]=.15;trailPts[i*3+2]=trailQ[i][1]}
  trailPts[n*3]=vx;trailPts[n*3+1]=.15;trailPts[n*3+2]=vz;
  trail.geometry.setDrawRange(0,n+1);trail.geometry.attributes.position.needsUpdate=true;
- // screen-edge arrow when he's off-screen / behind you
- _p.set(vx,1.2,vz).project(cam);
- const behind=_p.z>1,off=behind||Math.abs(_p.x)>.92||Math.abs(_p.y)>.92;
- if(off){let sx=behind?-_p.x:_p.x,sy=behind?-_p.y:_p.y;const m=Math.max(Math.abs(sx),Math.abs(sy),1e-6);
-  sx/=m;sy/=m;const k=.86;sx*=k;sy*=k;
-  const px=(sx*.5+.5)*innerWidth,py=(-sy*.5+.5)*innerHeight;
-  varrow.style.display='block';
-  varrow.style.transform=`translate(${px}px,${py}px) translate(-50%,-50%)`;
-  $('vtri').style.transform=`rotate(${Math.atan2(sx*innerWidth,sy*innerHeight)}rad)`;
-  $('vlbl').textContent=len.toFixed(0)+'m'}
- else varrow.style.display='none'}
+ placeArrow(varrow,_b);
+ // cores
+ let near=null,nd=1e9;
+ for(const c of cores){const d=Math.hypot(c.position.x-P.x,c.position.z-P.z);if(d<nd){nd=d;near=c}
+  c.tr.position.set(c.position.x,0,c.position.z);c.tr.children[1].scale.setScalar(pulse);c.tr.children[2].position.y=c.position.y;
+  placeArrow(c.arrow,c.position)}
+ trCoreLine.visible=!!near;
+ if(near){_c.copy(near.position);trCoreLine.position.copy(_a).add(_c).multiplyScalar(.5);trCoreLine.scale.z=Math.max(_a.distanceTo(_c),.001);trCoreLine.lookAt(_c)}}
 
 /* ---------- loading models ---------- */
 const mgr=new THREE.LoadingManager();const gl=new GLTFLoader(mgr);
@@ -309,7 +332,7 @@ function tick(dt){
  cam.fov+=((sprinting?82:75)-cam.fov)*Math.min(1,dt*6);cam.updateProjectionMatrix();
 
  for(let i=cores.length-1;i>=0;i--){const c=cores[i];c.rotation.y+=dt*2;c.position.y=1.1+Math.sin(performance.now()/400+i)*.12;
-  if(Math.hypot(P.x-c.position.x,P.z-c.position.z)<1.3){scene.remove(c);cores.splice(i,1);got++;hunt=10;tone(660,1320,.5,.25);
+  if(Math.hypot(P.x-c.position.x,P.z-c.position.z)<1.3){scene.remove(c);TR.remove(c.tr);c.arrow.remove();cores.splice(i,1);got++;hunt=10;tone(660,1320,.5,.25);
    if(got===GOAL){pillar.material.color.set(0x22ff66);exitLight.color.set(0x22ff66);}}}
  if(Math.hypot(P.x-exit[0]*T,P.z-exit[1]*T)<1.5){
   if(got>=GOAL){state='win';document.exitPointerLock();setTimeout(()=>screen('Escaped','','play again'),300)}
@@ -326,7 +349,7 @@ function tick(dt){
  mc.clearRect(0,0,150,150);const s=150/W;
  for(let z=0;z<W;z++)for(let x=0;x<W;x++)if(exp[z][x]){mc.fillStyle=g[z][x]?'#151515':'#4a3a3a';mc.fillRect(x*s,z*s,s,s)}
  if(exp[exit[1]][exit[0]]){mc.fillStyle=got>=GOAL?'#2f6':'#f33';mc.fillRect(exit[0]*s,exit[1]*s,s,s)}
- mc.fillStyle='#3fe';cores.forEach(c=>{if(exp[c.tz][c.tx])mc.fillRect(c.tx*s+1,c.tz*s+1,s-2,s-2)});
+ mc.fillStyle='#3fe';cores.forEach(c=>{if(DEBUG||exp[c.tz][c.tx])mc.fillRect(c.tx*s+1,c.tz*s+1,s-2,s-2)});
  const ux=P.x/T*s+s/2,uz=P.z/T*s+s/2;mc.fillStyle='#fff';mc.fillRect(ux-2,uz-2,4,4);
  mc.strokeStyle='#fff';mc.beginPath();mc.moveTo(ux,uz);mc.lineTo(ux-Math.sin(yaw)*9,uz-Math.cos(yaw)*9);mc.stroke();
  // debug: Verity is always shown on the minimap (even in unexplored areas), with a tracer line + his trail
@@ -336,13 +359,14 @@ function tick(dt){
   mc.fillStyle='#f33';mc.fillRect(vx-3,vz-3,6,6);mc.strokeRect(vx-6,vz-6,12,12)}}
 
 /* ---------- debug mode (F3): tracers only ---------- */
-function setDebug(on){DEBUG=on;TR.visible=on;$('dbg').style.display=on?'block':'none';if(!on)varrow.style.display='none'}
+function setDebug(on){DEBUG=on;TR.visible=on;$('dbg').style.display=on?'block':'none';if(!on){varrow.style.display='none';cores.forEach(c=>c.arrow.style.display='none')}}
 addEventListener('keydown',e=>{if(e.code==='F3'){e.preventDefault();setDebug(!DEBUG)}});
 const dbgText=()=>{
  const dx=V.position.x-P.x,dz=V.position.z-P.z;
  let rel=Math.atan2(-dx,-dz)-yaw;rel=Math.atan2(Math.sin(rel),Math.cos(rel));   // + = to your left
  const deg=Math.abs(rel*57.3)|0,dir=deg<10?'ahead':deg>150?'behind you':deg+'deg '+(rel>0?'left':'right');
- return `DEBUG (F3 toggles)${DEBUG_GODMODE?' - god mode':''}\nVerity ${V.position.x.toFixed(1)},${V.position.z.toFixed(1)}  Player ${P.x.toFixed(1)},${P.z.toFixed(1)}\nTRACER  dist ${Math.hypot(dx,dz).toFixed(1)}m  bearing ${dir}  mode ${vMode}`}
+ let cd=1e9;for(const c of cores)cd=Math.min(cd,Math.hypot(c.position.x-P.x,c.position.z-P.z));
+ return `DEBUG (F3 toggles)${DEBUG_GODMODE?' - god mode':''}\nVerity ${V.position.x.toFixed(1)},${V.position.z.toFixed(1)}  Player ${P.x.toFixed(1)},${P.z.toFixed(1)}\nTRACER  dist ${Math.hypot(dx,dz).toFixed(1)}m  bearing ${dir}  mode ${vMode}\nCORES   ${cores.length} left${cores.length?`, nearest ${cd.toFixed(1)}m`:''}`}
 
 /* ---------- main loop ---------- */
 const clock=new THREE.Clock();
