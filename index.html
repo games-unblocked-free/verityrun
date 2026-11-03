@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VERITY — Dark Maze</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;box-sizing:border-box}
+html,body{height:100%;background:#000;overflow:hidden;font-family:Georgia,serif;color:#cbb}
+canvas{display:block}
+.scr{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.88);text-align:center;padding:24px;z-index:5}
+.scr.hide{display:none}
+h1{font-size:clamp(34px,8vw,80px);letter-spacing:.3em;color:#a11;text-shadow:0 0 24px #600}
+p{max-width:580px;line-height:1.6;margin:8px;white-space:pre-line}
+button{margin-top:18px;padding:12px 34px;background:#200;color:#e88;border:1px solid #a11;font:inherit;font-size:20px;letter-spacing:.2em;cursor:pointer}
+button:disabled{opacity:.4;cursor:wait}
+#hud{position:fixed;left:18px;bottom:18px;z-index:2;pointer-events:none;text-shadow:0 0 6px #000}
+#obj{font-size:17px;margin-bottom:8px}
+#bar{width:180px;height:8px;background:#1a0a0a;border:1px solid #522}
+#st{display:block;height:100%;width:100%;background:#c33}
+#map{position:fixed;right:14px;top:14px;z-index:2;border:1px solid #422;background:#000;opacity:.85}
+#msg{position:fixed;top:14%;left:0;right:0;text-align:center;z-index:2;font-size:22px;color:#f66;text-shadow:0 0 10px #000;opacity:0;transition:opacity .6s;pointer-events:none}
+#red{position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(transparent 40%,#a00);opacity:0}
+#cross{position:fixed;left:50%;top:50%;width:3px;height:3px;margin:-1px;background:#fff6;border-radius:50%;z-index:2}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="hud"><div id="obj"></div><div id="bar"><i id="st"></i></div></div>
+<canvas id="map" width="150" height="150"></canvas>
+<div id="cross"></div><div id="msg"></div><div id="red"></div>
+<div class="scr" id="scr"><h1 id="t">VERITY</h1><p id="m"></p><button id="b" disabled>LOADING 0%</button></div>
+
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+/* ============ CONFIG — tweak these to fit your models ============ */
+const ASSETS='assets/';
+const ARMS_FILE='psx_first_person_arms.glb', ARMS_CLIP='ArmsRig | relax';
+const ARMS={pos:[0,-0.5,-0.2], rot:[0,0,0], scale:1};   // arms offset from camera
+const VERITY_FILE='veritytm.glb', VERITY_CLIP='verity.mdl|verity.mdl/@CWalk';
+const VERITY_H=2.3, VERITY_YAW=0;                        // height in metres, facing offset (radians)
+const N=12, T=3;                                          // maze cells per side, tile size
+/* ================================================================= */
+
+const $=id=>document.getElementById(id);
+const W=2*N+1;
+
+/* ---------- renderer / scene ---------- */
+const R=new THREE.WebGLRenderer({antialias:true});
+R.setPixelRatio(Math.min(devicePixelRatio,2));R.setSize(innerWidth,innerHeight);
+document.body.prepend(R.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0);scene.fog=new THREE.FogExp2(0,.11);
+const cam=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.03,80);cam.rotation.order='YXZ';scene.add(cam);
+scene.add(new THREE.AmbientLight(0x38384a,.9));
+const torch=new THREE.SpotLight(0xfff0d8,90,32,.55,.55,1.4);
+torch.position.set(.15,-.1,0);cam.add(torch,torch.target);torch.target.position.set(0,0,-5);
+cam.add(new THREE.PointLight(0xffddbb,1.2,3,1.5));
+addEventListener('resize',()=>{R.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()});
+
+/* ---------- maze generation (recursive backtracker + extra loops) ---------- */
+const g=Array.from({length:W},()=>Array(W).fill(1));
+{const st=[[1,1]];g[1][1]=0;
+ while(st.length){const[x,z]=st[st.length-1];
+  const n=[[2,0],[-2,0],[0,2],[0,-2]].filter(([a,b])=>x+a>0&&x+a<W-1&&z+b>0&&z+b<W-1&&g[z+b][x+a]===1).sort(()=>Math.random()-.5);
+  if(!n.length){st.pop();continue}
+  const[a,b]=n[0];g[z+b/2][x+a/2]=0;g[z+b][x+a]=0;st.push([x+a,z+b]);}
+ for(let i=0;i<40;i++){const x=1+Math.random()*(W-2)|0,z=1+Math.random()*(W-2)|0;
+  if(g[z][x]===1&&((g[z][x-1]===0&&g[z][x+1]===0)||(g[z-1][x]===0&&g[z+1][x]===0)))g[z][x]=0;}}
+
+function distMap(sx,sz){const d=Array.from({length:W},()=>Array(W).fill(1e9));d[sz][sx]=0;const q=[[sx,sz]];
+ for(let i=0;i<q.length;i++){const[x,z]=q[i];
+  for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+a,nz=z+b;
+   if(g[nz]?.[nx]===0&&d[nz][nx]>d[z][x]+1){d[nz][nx]=d[z][x]+1;q.push([nx,nz])}}}
+ return d}
+const solid=(x,z)=>g[Math.round(z/T)]?.[Math.round(x/T)]!==0;
+
+/* ---------- textures + geometry ---------- */
+function tex(c1,line,rep){const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');
+ x.fillStyle=c1;x.fillRect(0,0,128,128);
+ for(let i=0;i<1600;i++){x.fillStyle=`rgba(${Math.random()<.5?0:90},0,0,${Math.random()*.25})`;x.fillRect(Math.random()*128,Math.random()*128,2,2)}
+ x.strokeStyle=line;x.lineWidth=2;for(let i=0;i<128;i+=32){x.strokeRect(-2,i,132,32)}
+ const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.magFilter=THREE.NearestFilter;if(rep)t.repeat.set(rep,rep);return t}
+const walls=[];for(let z=0;z<W;z++)for(let x=0;x<W;x++)if(g[z][x])walls.push([x,z]);
+const wm=new THREE.InstancedMesh(new THREE.BoxGeometry(T,3.4,T),new THREE.MeshStandardMaterial({map:tex('#463838','#1a1010'),roughness:.9}),walls.length);
+const D=new THREE.Object3D();walls.forEach(([x,z],i)=>{D.position.set(x*T,1.7,z*T);D.updateMatrix();wm.setMatrixAt(i,D.matrix)});scene.add(wm);
+const mid=(W-1)*T/2;
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(W*T,W*T),new THREE.MeshStandardMaterial({map:tex('#2c2424','#150d0d',W),roughness:1}));
+floor.rotation.x=-Math.PI/2;floor.position.set(mid,0,mid);scene.add(floor);
+const ceil=new THREE.Mesh(new THREE.PlaneGeometry(W*T,W*T),new THREE.MeshStandardMaterial({map:tex('#1c1616','#0c0808',W)}));
+ceil.rotation.x=Math.PI/2;ceil.position.set(mid,3.4,mid);scene.add(ceil);
+
+/* ---------- objective items ---------- */
+const opens=[];for(let z=0;z<W;z++)for(let x=0;x<W;x++)if(!g[z][x])opens.push([x,z]);
+const sm=distMap(1,1);
+const exit=opens.reduce((a,b)=>sm[b[1]][b[0]]>sm[a[1]][a[0]]?b:a);
+const em=distMap(...exit);
+const pillar=new THREE.Mesh(new THREE.CylinderGeometry(.9,.9,3.4,24,1,true),new THREE.MeshBasicMaterial({color:0xff2222,transparent:true,opacity:.35,side:THREE.DoubleSide,fog:false}));
+pillar.position.set(exit[0]*T,1.7,exit[1]*T);scene.add(pillar);
+const exitLight=new THREE.PointLight(0xff2222,12,12,2);exitLight.position.set(exit[0]*T,1.5,exit[1]*T);scene.add(exitLight);
+const cores=[];
+for(let tries=0;cores.length<5&&tries<3000;tries++){
+ const c=opens[Math.random()*opens.length|0];
+ if(sm[c[1]][c[0]]<8||em[c[1]][c[0]]<6||cores.some(o=>Math.abs(o.tx-c[0])+Math.abs(o.tz-c[1])<8))continue;
+ const m=new THREE.Mesh(new THREE.OctahedronGeometry(.3),new THREE.MeshBasicMaterial({color:0x33ffee}));
+ m.position.set(c[0]*T,1.1,c[1]*T);m.tx=c[0];m.tz=c[1];
+ const l=new THREE.PointLight(0x33ffee,8,9,2);m.add(l);scene.add(m);cores.push(m)}
+const GOAL=cores.length;let got=0;
+
+/* ---------- Verity ---------- */
+const V=new THREE.Group();scene.add(V);
+{const c=opens.filter(o=>sm[o[1]][o[0]]>=20);const s=c.length?c[Math.random()*c.length|0]:exit;V.position.set(s[0]*T,0,s[1]*T)}
+V.add(new THREE.PointLight(0xff2222,5,7,2));V.children[0].position.y=1.5;
+let vMix=null,vYaw=0;
+
+/* ---------- loading models ---------- */
+const mgr=new THREE.LoadingManager();const gl=new GLTFLoader(mgr);
+mgr.onProgress=(u,i,n)=>{$('b').textContent='LOADING '+Math.round(i/n*100)+'%'};
+const load=f=>new Promise(r=>gl.load(ASSETS+f,r,undefined,e=>{console.warn('Could not load '+ASSETS+f,e);r(null)}));
+const findClip=(a,name)=>a.find(c=>c.name===name)||a.find(c=>c.name.toLowerCase().includes(name.split(/[|\/]/).pop().trim().toLowerCase()))||a[0];
+let aMix=null;
+const [gA,gV]=await Promise.all([load(ARMS_FILE),load(VERITY_FILE)]);
+if(gA){const a=gA.scene;a.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.renderOrder=10}});
+ a.position.set(...ARMS.pos);a.rotation.set(...ARMS.rot);a.scale.setScalar(ARMS.scale);cam.add(a);
+ aMix=new THREE.AnimationMixer(a);const c=findClip(gA.animations,ARMS_CLIP);if(c)aMix.clipAction(c).setLoop(THREE.LoopRepeat,Infinity).play();else console.warn('Arms animation not found')}
+if(gV){const m=gV.scene;m.traverse(o=>{if(o.isMesh)o.frustumCulled=false});
+ const b=new THREE.Box3().setFromObject(m);const s=VERITY_H/((b.max.y-b.min.y)||1);m.scale.multiplyScalar(s);
+ b.setFromObject(m);m.position.set(-(b.min.x+b.max.x)/2,-b.min.y,-(b.min.z+b.max.z)/2);
+ const h=new THREE.Group();h.add(m);h.rotation.y=VERITY_YAW;V.add(h);
+ vMix=new THREE.AnimationMixer(m);const c=findClip(gV.animations,VERITY_CLIP);if(c)vMix.clipAction(c).setLoop(THREE.LoopRepeat,Infinity).play();else console.warn('Verity animation not found')}
+else{const f=new THREE.Mesh(new THREE.CapsuleGeometry(.4,1.5,4,8),new THREE.MeshStandardMaterial({color:0x550000}));f.position.y=1.15;V.add(f)}
+
+/* ---------- audio ---------- */
+let AC;
+function initAudio(){AC=new AudioContext();const m=AC.createGain();m.gain.value=.5;m.connect(AC.destination);AC.out=m;
+ [40,41.7].forEach(f=>{const o=AC.createOscillator(),g=AC.createGain(),l=AC.createBiquadFilter();o.type='sawtooth';o.frequency.value=f;l.type='lowpass';l.frequency.value=140;g.gain.value=.07;o.connect(l);l.connect(g);g.connect(m);o.start()})}
+function tone(f,f2,d,v,type='sine'){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime;o.type=type;
+ o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f2,t+d);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);
+ o.connect(g);g.connect(AC.out);o.start(t);o.stop(t+d)}
+
+/* ---------- UI ---------- */
+let state='menu',msgT;
+function screen(t,m,b){$('t').textContent=t;$('m').textContent=m;$('b').textContent=b;$('b').disabled=false;$('scr').classList.remove('hide')}
+function say(t,ms=3500){const e=$('msg');e.textContent=t;e.style.opacity=1;clearTimeout(msgT);msgT=setTimeout(()=>e.style.opacity=0,ms)}
+screen('VERITY',`You woke up in the dark. Something is hunting you.\n\nOBJECTIVE: Find ${GOAL} power cores to unlock the exit gate, then reach the green light — before Verity finds you.\n\nWASD move · Shift sprint (limited stamina) · Mouse look · Esc pause\nSprinting is loud. Every core you grab lets Verity hear you, and he gets faster.`,'ENTER THE MAZE');
+$('b').onclick=()=>{if(state==='menu'||state==='pause'){if(!AC)initAudio();R.domElement.requestPointerLock();state='play';$('scr').classList.add('hide');clock.getDelta()}else location.reload()};
+document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement!==R.domElement&&state==='play'){state='pause';screen('PAUSED','The maze waits. So does Verity.','RESUME')}});
+const keys={};addEventListener('keydown',e=>keys[e.code]=1);addEventListener('keyup',e=>keys[e.code]=0);
+let yaw=0,pitch=0;
+addEventListener('mousemove',e=>{if(state!=='play')return;yaw-=e.movementX*.0023;pitch=Math.max(-1.4,Math.min(1.4,pitch-e.movementY*.0023))});
+
+/* ---------- game state ---------- */
+const P={x:T,z:T};{const o=[[1,0],[0,1],[-1,0],[0,-1]].find(([a,b])=>g[1+b]?.[1+a]===0);if(o)yaw=Math.atan2(o[0],o[1])+Math.PI}
+let stam=100,tired=false,sprinting=false,bob=0,hb=1,hunt=0,vMode='patrol',vLost=0,pKey='',pmap=null,patT=null,patMap=null,deadT=0;
+const exp=Array.from({length:W},()=>Array(W).fill(false));
+const mc=$('map').getContext('2d');
+
+function move(dx,dz){const r=.4;
+ for(const[ax,az]of[[dx,0],[0,dz]]){const nx=P.x+ax,nz=P.z+az;
+  if(![[r,r],[-r,r],[r,-r],[-r,-r]].some(([a,b])=>solid(nx+a,nz+b))){P.x=nx;P.z=nz}}}
+
+function updateVerity(dt){
+ const vt=[Math.round(V.position.x/T),Math.round(V.position.z/T)],pt=[Math.round(P.x/T),Math.round(P.z/T)];
+ if(pt.join()!==pKey||!pmap){pmap=distMap(...pt);pKey=pt.join()}
+ const pd=pmap[vt[1]][vt[0]];hunt-=dt;
+ if(hunt>0||pd<=(sprinting?16:9)){vMode='chase';vLost=0}else if(vMode==='chase'&&(vLost+=dt)>5)vMode='patrol';
+ let map=pmap,spd=3+.35*got;
+ if(vMode==='patrol'){spd=1.8;
+  if(!patT||(vt[0]===patT[0]&&vt[1]===patT[1])){patT=opens[Math.random()*opens.length|0];patMap=distMap(...patT)}
+  map=patMap}
+ let tx=P.x,tz=P.z;
+ if(map[vt[1]][vt[0]]>0){let best=null,bd=1e9;
+  for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){const d=map[vt[1]+b]?.[vt[0]+a]??1e9;if(d<bd){bd=d;best=[vt[0]+a,vt[1]+b]}}
+  if(best){tx=best[0]*T;tz=best[1]*T}}
+ else if(vMode==='patrol'){tx=V.position.x;tz=V.position.z}
+ const dx=tx-V.position.x,dz=tz-V.position.z,l=Math.hypot(dx,dz);
+ if(l>.05){const s=Math.min(l,spd*dt);V.position.x+=dx/l*s;V.position.z+=dz/l*s;
+  let ty=Math.atan2(dx,dz),df=ty-vYaw;df=Math.atan2(Math.sin(df),Math.cos(df));vYaw+=df*Math.min(1,dt*8);V.rotation.y=vYaw}
+ if(vMix)vMix.timeScale=vMode==='chase'?1.5:.9;
+ return Math.hypot(P.x-V.position.x,P.z-V.position.z)}
+
+function die(){state='dead';deadT=0;document.exitPointerLock();tone(900,80,1.2,.5,'sawtooth');$('red').style.opacity=1;
+ setTimeout(()=>screen('YOU WERE CAUGHT','Verity found you in the dark.\nThe maze resets. It always does.','TRY AGAIN'),1500)}
+
+function tick(dt){
+ const f=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0),r=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0),mv=f||r;
+ sprinting=!!((keys.ShiftLeft||keys.ShiftRight)&&mv&&stam>0&&!tired);
+ if(sprinting){stam-=30*dt;if(stam<=0){stam=0;tired=true}}else{stam=Math.min(100,stam+(mv?12:22)*dt);if(tired&&stam>30)tired=false}
+ const spd=sprinting?5.6:3.4;
+ if(mv){const l=Math.hypot(f,r),s=Math.sin(yaw),c=Math.cos(yaw),pb=Math.sin(bob);
+  move((-s*f+c*r)/l*spd*dt,(-c*f-s*r)/l*spd*dt);bob+=dt*spd*2.1;
+  if(pb*Math.sin(bob)<0)tone(110,50,.09,.07,'triangle')}
+ cam.position.set(P.x,1.6+(mv?Math.sin(bob)*.04:0),P.z);cam.rotation.set(pitch,yaw,0);
+
+ const vd=updateVerity(dt);
+ if(vd<1.2&&vMode==='chase')return die();
+
+ for(let i=cores.length-1;i>=0;i--){const c=cores[i];c.rotation.y+=dt*2;c.position.y=1.1+Math.sin(performance.now()/400+i)*.12;
+  if(Math.hypot(P.x-c.position.x,P.z-c.position.z)<1.3){scene.remove(c);cores.splice(i,1);got++;hunt=10;tone(660,1320,.5,.25);
+   if(got===GOAL){pillar.material.color.set(0x22ff66);exitLight.color.set(0x22ff66);say('The gate is open — RUN to the green light!')}
+   else say(`Core ${got}/${GOAL} — the hum echoes... Verity is coming!`)}}
+ if(Math.hypot(P.x-exit[0]*T,P.z-exit[1]*T)<1.5){
+  if(got>=GOAL){state='win';document.exitPointerLock();setTimeout(()=>screen('YOU ESCAPED','You slipped through the gate as Verity\'s footsteps faded behind you.','PLAY AGAIN'),300)}
+  else say(`The gate is sealed. ${GOAL-got} core${GOAL-got>1?'s':''} missing.`,1500)}
+
+ hb-=dt;if(hb<=0){if(vd<24){tone(60,35,.25,.9);hb=.3+vd/30}else hb=1}
+ torch.intensity=vd<10&&Math.random()<(10-vd)/25?20+Math.random()*40:90;
+ $('red').style.opacity=Math.max(0,Math.min(.55,1-vd/10));
+ $('st').style.width=stam+'%';$('st').style.background=tired?'#733':'#c33';
+ $('obj').textContent=got<GOAL?`Find the power cores: ${got}/${GOAL}`:'Exit unlocked — reach the green light!';
+
+ const px=Math.round(P.x/T),pz=Math.round(P.z/T);
+ for(let a=-2;a<=2;a++)for(let b=-2;b<=2;b++)if(exp[pz+b])exp[pz+b][px+a]=true;
+ mc.clearRect(0,0,150,150);const s=150/W;
+ for(let z=0;z<W;z++)for(let x=0;x<W;x++)if(exp[z][x]){mc.fillStyle=g[z][x]?'#151515':'#4a3a3a';mc.fillRect(x*s,z*s,s,s)}
+ if(exp[exit[1]][exit[0]]){mc.fillStyle=got>=GOAL?'#2f6':'#f33';mc.fillRect(exit[0]*s,exit[1]*s,s,s)}
+ mc.fillStyle='#3fe';cores.forEach(c=>{if(exp[c.tz][c.tx])mc.fillRect(c.tx*s+1,c.tz*s+1,s-2,s-2)});
+ const ux=P.x/T*s+s/2,uz=P.z/T*s+s/2;mc.fillStyle='#fff';mc.fillRect(ux-2,uz-2,4,4);
+ mc.strokeStyle='#fff';mc.beginPath();mc.moveTo(ux,uz);mc.lineTo(ux-Math.sin(yaw)*9,uz-Math.cos(yaw)*9);mc.stroke()}
+
+/* ---------- main loop ---------- */
+const clock=new THREE.Clock();
+$('b').disabled=false;$('b').textContent='ENTER THE MAZE';
+cam.position.set(P.x,1.6,P.z);cam.rotation.set(0,yaw,0);
+R.setAnimationLoop(()=>{
+ const dt=Math.min(clock.getDelta(),.05);aMix?.update(dt);vMix?.update(dt);
+ if(state==='play')tick(dt);
+ else if(state==='dead'){deadT+=dt;cam.lookAt(V.position.x,1.7,V.position.z)}
+ R.render(scene,cam)});
+</script>
+</body>
+</html>
