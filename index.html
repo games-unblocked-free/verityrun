@@ -1,235 +1,160 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>VERITY — Dark Maze</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VERITY: BLACKOUT</title>
 <style>
-*{margin:0;box-sizing:border-box}
-html,body{height:100%;background:#000;overflow:hidden;font-family:Georgia,serif;color:#cbb}
-canvas{display:block}
-.scr{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.88);text-align:center;padding:24px;z-index:5}
-.scr.hide{display:none}
-h1{font-size:clamp(34px,8vw,80px);letter-spacing:.3em;color:#a11;text-shadow:0 0 24px #600}
-p{max-width:580px;line-height:1.6;margin:8px;white-space:pre-line}
-button{margin-top:18px;padding:12px 34px;background:#200;color:#e88;border:1px solid #a11;font:inherit;font-size:20px;letter-spacing:.2em;cursor:pointer}
-button:disabled{opacity:.4;cursor:wait}
-#hud{position:fixed;left:18px;bottom:18px;z-index:2;pointer-events:none;text-shadow:0 0 6px #000}
-#obj{font-size:17px;margin-bottom:8px}
-#bar{width:180px;height:8px;background:#1a0a0a;border:1px solid #522}
-#st{display:block;height:100%;width:100%;background:#c33}
-#map{position:fixed;right:14px;top:14px;z-index:2;border:1px solid #422;background:#000;opacity:.85}
-#msg{position:fixed;top:14%;left:0;right:0;text-align:center;z-index:2;font-size:22px;color:#f66;text-shadow:0 0 10px #000;opacity:0;transition:opacity .6s;pointer-events:none}
-#red{position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(transparent 40%,#a00);opacity:0}
-#cross{position:fixed;left:50%;top:50%;width:3px;height:3px;margin:-1px;background:#fff6;border-radius:50%;z-index:2}
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#030407;color:#e7e9ed;font:14px/1.4 system-ui,Segoe UI,Arial}
+#game{position:fixed;inset:0}canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none;text-shadow:0 2px 8px #000}
+#top{position:absolute;left:24px;top:20px;display:flex;gap:14px;align-items:center}
+.tag{border:1px solid #ffffff24;background:#07090dcc;padding:8px 12px;letter-spacing:.12em;font-size:11px;color:#c4c9d2}
+#objective{position:absolute;left:24px;top:74px;max-width:300px;padding:13px 15px;background:#050609c9;border-left:2px solid #c4d9ff}
+#objective b{display:block;font-size:11px;letter-spacing:.16em;color:#9fbbe8;margin-bottom:5px}
+#objText{font-size:13px;color:#e6e8ec}
+#center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center}
+#cross{font-size:22px;color:#d7e1ef;opacity:.8}
+#prompt{margin-top:18px;font-size:12px;letter-spacing:.13em;color:#e4e8ef;background:#050609b8;padding:8px 12px;display:none}
+#bottom{position:absolute;left:24px;bottom:22px;color:#a9adb7;font-size:11px;letter-spacing:.09em}
+#danger{position:absolute;inset:0;border:0 solid #a3001b;transition:border-width .2s,opacity .2s;opacity:0}
+#danger.active{border-width:14px;opacity:.55}
+#intro,#ending{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse,#10131bdb,#020307f5);z-index:5}
+.panel{width:min(560px,calc(100% - 36px));padding:34px;background:#080a10ed;border:1px solid #39404e;box-shadow:0 20px 100px #000;text-align:left}
+.kicker{font-size:10px;letter-spacing:.3em;color:#9aacc8}
+h1{font-size:clamp(36px,8vw,62px);letter-spacing:.08em;line-height:.95;margin:12px 0;color:#e8edf5}
+.panel p{color:#aeb5c2;line-height:1.7}
+.panel button{background:#dce5f3;color:#080a10;border:0;padding:13px 20px;font-weight:800;letter-spacing:.14em;cursor:pointer;margin-top:12px}
+#ending{display:none}#ending h2{letter-spacing:.15em}
+#mobile{position:fixed;bottom:20px;right:20px;display:none;gap:8px;z-index:3}
+#mobile button{width:54px;height:54px;border:1px solid #ffffff44;background:#080a10bb;color:white;font-size:20px}
+@media(max-width:700px){#mobile{display:grid;grid-template-columns:repeat(3,54px)}#bottom{max-width:50%}#top{left:12px;top:12px}#objective{left:12px;top:65px}}
 </style>
-<script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
-</script>
 </head>
 <body>
-<div id="hud"><div id="obj"></div><div id="bar"><i id="st"></i></div></div>
-<canvas id="map" width="150" height="150"></canvas>
-<div id="cross"></div><div id="msg"></div><div id="red"></div>
-<div class="scr" id="scr"><h1 id="t">VERITY</h1><p id="m"></p><button id="b" disabled>LOADING 0%</button></div>
-
+<div id="game"></div>
+<div id="hud">
+  <div id="top"><div class="tag">V / BLACKOUT</div><div class="tag">SIGNAL <span id="signal">01</span></div></div>
+  <div id="objective"><b>PRIMARY OBJECTIVE</b><div id="objText">Recover 3 relay fuses to unlock the exit.</div></div>
+  <div id="center"><div id="cross">+</div><div id="prompt">[ E ] COLLECT</div></div>
+  <div id="bottom">WASD MOVE · MOUSE LOOK · SHIFT SPRINT · E INTERACT · ESC RELEASE MOUSE</div>
+  <div id="danger"></div>
+</div>
+<div id="intro"><div class="panel">
+  <div class="kicker">NIGHT SHIFT // INCIDENT 07</div><h1>VERITY:<br>BLACKOUT</h1>
+  <p>The maze's relay system is dead. Find all <b>3 fuses</b>, restore the exit beacon, and get out. Something is walking the corridors. It reacts to your movement. Sprint when you must, but listen carefully.</p>
+  <p><b>WASD</b> move · <b>mouse</b> look · <b>shift</b> sprint · <b>E</b> collect / activate</p>
+  <button id="start">ENTER THE MAZE</button>
+</div></div>
+<div id="ending"><div class="panel"><div class="kicker">SIGNAL RESTORED</div><h2 id="endTitle">YOU ESCAPED</h2><p id="endText">The beacon burns through the dark. You made it out.</p><button id="again">PLAY AGAIN</button></div></div>
+<div id="mobile">
+  <button data-key="KeyW">▲</button><button data-key="ShiftLeft">SPR</button><button data-key="KeyE">E</button>
+  <button data-key="KeyA">◀</button><button data-key="KeyS">▼</button><button data-key="KeyD">▶</button>
+</div>
 <script type="module">
-import * as THREE from 'three';
-import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-
-/* ============ CONFIG — tweak these to fit your models ============ */
-const ASSETS='assets/';
-const ARMS_FILE='psx_first_person_arms.glb', ARMS_CLIP='ArmsRig | relax';
-const ARMS={pos:[0,-0.5,-0.2], rot:[0,0,0], scale:1};   // arms offset from camera
-const VERITY_FILE='veritytm.glb', VERITY_CLIP='verity.mdl|verity.mdl/@CWalk';
-const VERITY_H=2.3, VERITY_YAW=0;                        // height in metres, facing offset (radians)
-const N=12, T=3;                                          // maze cells per side, tile size
-/* ================================================================= */
+import * as THREE from 'https://esm.sh/three@0.170.0';
+import {GLTFLoader} from 'https://esm.sh/three@0.170.0/examples/jsm/loaders/GLTFLoader.js';
+import {PointerLockControls} from 'https://esm.sh/three@0.170.0/examples/jsm/controls/PointerLockControls.js';
 
 const $=id=>document.getElementById(id);
-const W=2*N+1;
-
-/* ---------- renderer / scene ---------- */
-const R=new THREE.WebGLRenderer({antialias:true});
-R.setPixelRatio(Math.min(devicePixelRatio,2));R.setSize(innerWidth,innerHeight);
-document.body.prepend(R.domElement);
-const scene=new THREE.Scene();scene.background=new THREE.Color(0);scene.fog=new THREE.FogExp2(0,.11);
-const cam=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.03,80);cam.rotation.order='YXZ';scene.add(cam);
-scene.add(new THREE.AmbientLight(0x38384a,.9));
-const torch=new THREE.SpotLight(0xfff0d8,90,32,.55,.55,1.4);
-torch.position.set(.15,-.1,0);cam.add(torch,torch.target);torch.target.position.set(0,0,-5);
-cam.add(new THREE.PointLight(0xffddbb,1.2,3,1.5));
-addEventListener('resize',()=>{R.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()});
-
-/* ---------- maze generation (recursive backtracker + extra loops) ---------- */
-const g=Array.from({length:W},()=>Array(W).fill(1));
-{const st=[[1,1]];g[1][1]=0;
- while(st.length){const[x,z]=st[st.length-1];
-  const n=[[2,0],[-2,0],[0,2],[0,-2]].filter(([a,b])=>x+a>0&&x+a<W-1&&z+b>0&&z+b<W-1&&g[z+b][x+a]===1).sort(()=>Math.random()-.5);
-  if(!n.length){st.pop();continue}
-  const[a,b]=n[0];g[z+b/2][x+a/2]=0;g[z+b][x+a]=0;st.push([x+a,z+b]);}
- for(let i=0;i<40;i++){const x=1+Math.random()*(W-2)|0,z=1+Math.random()*(W-2)|0;
-  if(g[z][x]===1&&((g[z][x-1]===0&&g[z][x+1]===0)||(g[z-1][x]===0&&g[z+1][x]===0)))g[z][x]=0;}}
-
-function distMap(sx,sz){const d=Array.from({length:W},()=>Array(W).fill(1e9));d[sz][sx]=0;const q=[[sx,sz]];
- for(let i=0;i<q.length;i++){const[x,z]=q[i];
-  for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+a,nz=z+b;
-   if(g[nz]?.[nx]===0&&d[nz][nx]>d[z][x]+1){d[nz][nx]=d[z][x]+1;q.push([nx,nz])}}}
- return d}
-const solid=(x,z)=>g[Math.round(z/T)]?.[Math.round(x/T)]!==0;
-
-/* ---------- textures + geometry ---------- */
-function tex(c1,line,rep){const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');
- x.fillStyle=c1;x.fillRect(0,0,128,128);
- for(let i=0;i<1600;i++){x.fillStyle=`rgba(${Math.random()<.5?0:90},0,0,${Math.random()*.25})`;x.fillRect(Math.random()*128,Math.random()*128,2,2)}
- x.strokeStyle=line;x.lineWidth=2;for(let i=0;i<128;i+=32){x.strokeRect(-2,i,132,32)}
- const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.magFilter=THREE.NearestFilter;if(rep)t.repeat.set(rep,rep);return t}
-const walls=[];for(let z=0;z<W;z++)for(let x=0;x<W;x++)if(g[z][x])walls.push([x,z]);
-const wm=new THREE.InstancedMesh(new THREE.BoxGeometry(T,3.4,T),new THREE.MeshStandardMaterial({map:tex('#463838','#1a1010'),roughness:.9}),walls.length);
-const D=new THREE.Object3D();walls.forEach(([x,z],i)=>{D.position.set(x*T,1.7,z*T);D.updateMatrix();wm.setMatrixAt(i,D.matrix)});scene.add(wm);
-const mid=(W-1)*T/2;
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(W*T,W*T),new THREE.MeshStandardMaterial({map:tex('#2c2424','#150d0d',W),roughness:1}));
-floor.rotation.x=-Math.PI/2;floor.position.set(mid,0,mid);scene.add(floor);
-const ceil=new THREE.Mesh(new THREE.PlaneGeometry(W*T,W*T),new THREE.MeshStandardMaterial({map:tex('#1c1616','#0c0808',W)}));
-ceil.rotation.x=Math.PI/2;ceil.position.set(mid,3.4,mid);scene.add(ceil);
-
-/* ---------- objective items ---------- */
-const opens=[];for(let z=0;z<W;z++)for(let x=0;x<W;x++)if(!g[z][x])opens.push([x,z]);
-const sm=distMap(1,1);
-const exit=opens.reduce((a,b)=>sm[b[1]][b[0]]>sm[a[1]][a[0]]?b:a);
-const em=distMap(...exit);
-const pillar=new THREE.Mesh(new THREE.CylinderGeometry(.9,.9,3.4,24,1,true),new THREE.MeshBasicMaterial({color:0xff2222,transparent:true,opacity:.35,side:THREE.DoubleSide,fog:false}));
-pillar.position.set(exit[0]*T,1.7,exit[1]*T);scene.add(pillar);
-const exitLight=new THREE.PointLight(0xff2222,12,12,2);exitLight.position.set(exit[0]*T,1.5,exit[1]*T);scene.add(exitLight);
-const cores=[];
-for(let tries=0;cores.length<5&&tries<3000;tries++){
- const c=opens[Math.random()*opens.length|0];
- if(sm[c[1]][c[0]]<8||em[c[1]][c[0]]<6||cores.some(o=>Math.abs(o.tx-c[0])+Math.abs(o.tz-c[1])<8))continue;
- const m=new THREE.Mesh(new THREE.OctahedronGeometry(.3),new THREE.MeshBasicMaterial({color:0x33ffee}));
- m.position.set(c[0]*T,1.1,c[1]*T);m.tx=c[0];m.tz=c[1];
- const l=new THREE.PointLight(0x33ffee,8,9,2);m.add(l);scene.add(m);cores.push(m)}
-const GOAL=cores.length;let got=0;
-
-/* ---------- Verity ---------- */
-const V=new THREE.Group();scene.add(V);
-{const c=opens.filter(o=>sm[o[1]][o[0]]>=20);const s=c.length?c[Math.random()*c.length|0]:exit;V.position.set(s[0]*T,0,s[1]*T)}
-V.add(new THREE.PointLight(0xff2222,5,7,2));V.children[0].position.y=1.5;
-let vMix=null,vYaw=0;
-
-/* ---------- loading models ---------- */
-const mgr=new THREE.LoadingManager();const gl=new GLTFLoader(mgr);
-mgr.onProgress=(u,i,n)=>{$('b').textContent='LOADING '+Math.round(i/n*100)+'%'};
-const load=f=>new Promise(r=>gl.load(ASSETS+f,r,undefined,e=>{console.warn('Could not load '+ASSETS+f,e);r(null)}));
-const findClip=(a,name)=>a.find(c=>c.name===name)||a.find(c=>c.name.toLowerCase().includes(name.split(/[|\/]/).pop().trim().toLowerCase()))||a[0];
-let aMix=null;
-const [gA,gV]=await Promise.all([load(ARMS_FILE),load(VERITY_FILE)]);
-if(gA){const a=gA.scene;a.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.renderOrder=10}});
- a.position.set(...ARMS.pos);a.rotation.set(...ARMS.rot);a.scale.setScalar(ARMS.scale);cam.add(a);
- aMix=new THREE.AnimationMixer(a);const c=findClip(gA.animations,ARMS_CLIP);if(c)aMix.clipAction(c).setLoop(THREE.LoopRepeat,Infinity).play();else console.warn('Arms animation not found')}
-if(gV){const m=gV.scene;m.traverse(o=>{if(o.isMesh)o.frustumCulled=false});
- const b=new THREE.Box3().setFromObject(m);const s=VERITY_H/((b.max.y-b.min.y)||1);m.scale.multiplyScalar(s);
- b.setFromObject(m);m.position.set(-(b.min.x+b.max.x)/2,-b.min.y,-(b.min.z+b.max.z)/2);
- const h=new THREE.Group();h.add(m);h.rotation.y=VERITY_YAW;V.add(h);
- vMix=new THREE.AnimationMixer(m);const c=findClip(gV.animations,VERITY_CLIP);if(c)vMix.clipAction(c).setLoop(THREE.LoopRepeat,Infinity).play();else console.warn('Verity animation not found')}
-else{const f=new THREE.Mesh(new THREE.CapsuleGeometry(.4,1.5,4,8),new THREE.MeshStandardMaterial({color:0x550000}));f.position.y=1.15;V.add(f)}
-
-/* ---------- audio ---------- */
-let AC;
-function initAudio(){AC=new AudioContext();const m=AC.createGain();m.gain.value=.5;m.connect(AC.destination);AC.out=m;
- [40,41.7].forEach(f=>{const o=AC.createOscillator(),g=AC.createGain(),l=AC.createBiquadFilter();o.type='sawtooth';o.frequency.value=f;l.type='lowpass';l.frequency.value=140;g.gain.value=.07;o.connect(l);l.connect(g);g.connect(m);o.start()})}
-function tone(f,f2,d,v,type='sine'){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime;o.type=type;
- o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f2,t+d);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);
- o.connect(g);g.connect(AC.out);o.start(t);o.stop(t+d)}
-
-/* ---------- UI ---------- */
-let state='menu',msgT;
-function screen(t,m,b){$('t').textContent=t;$('m').textContent=m;$('b').textContent=b;$('b').disabled=false;$('scr').classList.remove('hide')}
-function say(t,ms=3500){const e=$('msg');e.textContent=t;e.style.opacity=1;clearTimeout(msgT);msgT=setTimeout(()=>e.style.opacity=0,ms)}
-screen('VERITY',`You woke up in the dark. Something is hunting you.\n\nOBJECTIVE: Find ${GOAL} power cores to unlock the exit gate, then reach the green light — before Verity finds you.\n\nWASD move · Shift sprint (limited stamina) · Mouse look · Esc pause\nSprinting is loud. Every core you grab lets Verity hear you, and he gets faster.`,'ENTER THE MAZE');
-$('b').onclick=()=>{if(state==='menu'||state==='pause'){if(!AC)initAudio();R.domElement.requestPointerLock();state='play';$('scr').classList.add('hide');clock.getDelta()}else location.reload()};
-document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement!==R.domElement&&state==='play'){state='pause';screen('PAUSED','The maze waits. So does Verity.','RESUME')}});
-const keys={};addEventListener('keydown',e=>keys[e.code]=1);addEventListener('keyup',e=>keys[e.code]=0);
-let yaw=0,pitch=0;
-addEventListener('mousemove',e=>{if(state!=='play')return;yaw-=e.movementX*.0023;pitch=Math.max(-1.4,Math.min(1.4,pitch-e.movementY*.0023))});
-
-/* ---------- game state ---------- */
-const P={x:T,z:T};{const o=[[1,0],[0,1],[-1,0],[0,-1]].find(([a,b])=>g[1+b]?.[1+a]===0);if(o)yaw=Math.atan2(o[0],o[1])+Math.PI}
-let stam=100,tired=false,sprinting=false,bob=0,hb=1,hunt=0,vMode='patrol',vLost=0,pKey='',pmap=null,patT=null,patMap=null,deadT=0;
-const exp=Array.from({length:W},()=>Array(W).fill(false));
-const mc=$('map').getContext('2d');
-
-function move(dx,dz){const r=.4;
- for(const[ax,az]of[[dx,0],[0,dz]]){const nx=P.x+ax,nz=P.z+az;
-  if(![[r,r],[-r,r],[r,-r],[-r,-r]].some(([a,b])=>solid(nx+a,nz+b))){P.x=nx;P.z=nz}}}
-
-function updateVerity(dt){
- const vt=[Math.round(V.position.x/T),Math.round(V.position.z/T)],pt=[Math.round(P.x/T),Math.round(P.z/T)];
- if(pt.join()!==pKey||!pmap){pmap=distMap(...pt);pKey=pt.join()}
- const pd=pmap[vt[1]][vt[0]];hunt-=dt;
- if(hunt>0||pd<=(sprinting?16:9)){vMode='chase';vLost=0}else if(vMode==='chase'&&(vLost+=dt)>5)vMode='patrol';
- let map=pmap,spd=3+.35*got;
- if(vMode==='patrol'){spd=1.8;
-  if(!patT||(vt[0]===patT[0]&&vt[1]===patT[1])){patT=opens[Math.random()*opens.length|0];patMap=distMap(...patT)}
-  map=patMap}
- let tx=P.x,tz=P.z;
- if(map[vt[1]][vt[0]]>0){let best=null,bd=1e9;
-  for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){const d=map[vt[1]+b]?.[vt[0]+a]??1e9;if(d<bd){bd=d;best=[vt[0]+a,vt[1]+b]}}
-  if(best){tx=best[0]*T;tz=best[1]*T}}
- else if(vMode==='patrol'){tx=V.position.x;tz=V.position.z}
- const dx=tx-V.position.x,dz=tz-V.position.z,l=Math.hypot(dx,dz);
- if(l>.05){const s=Math.min(l,spd*dt);V.position.x+=dx/l*s;V.position.z+=dz/l*s;
-  let ty=Math.atan2(dx,dz),df=ty-vYaw;df=Math.atan2(Math.sin(df),Math.cos(df));vYaw+=df*Math.min(1,dt*8);V.rotation.y=vYaw}
- if(vMix)vMix.timeScale=vMode==='chase'?1.5:.9;
- return Math.hypot(P.x-V.position.x,P.z-V.position.z)}
-
-function die(){state='dead';deadT=0;document.exitPointerLock();tone(900,80,1.2,.5,'sawtooth');$('red').style.opacity=1;
- setTimeout(()=>screen('YOU WERE CAUGHT','Verity found you in the dark.\nThe maze resets. It always does.','TRY AGAIN'),1500)}
-
-function tick(dt){
- const f=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0),r=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0),mv=f||r;
- sprinting=!!((keys.ShiftLeft||keys.ShiftRight)&&mv&&stam>0&&!tired);
- if(sprinting){stam-=30*dt;if(stam<=0){stam=0;tired=true}}else{stam=Math.min(100,stam+(mv?12:22)*dt);if(tired&&stam>30)tired=false}
- const spd=sprinting?5.6:3.4;
- if(mv){const l=Math.hypot(f,r),s=Math.sin(yaw),c=Math.cos(yaw),pb=Math.sin(bob);
-  move((-s*f+c*r)/l*spd*dt,(-c*f-s*r)/l*spd*dt);bob+=dt*spd*2.1;
-  if(pb*Math.sin(bob)<0)tone(110,50,.09,.07,'triangle')}
- cam.position.set(P.x,1.6+(mv?Math.sin(bob)*.04:0),P.z);cam.rotation.set(pitch,yaw,0);
-
- const vd=updateVerity(dt);
- if(vd<1.2&&vMode==='chase')return die();
-
- for(let i=cores.length-1;i>=0;i--){const c=cores[i];c.rotation.y+=dt*2;c.position.y=1.1+Math.sin(performance.now()/400+i)*.12;
-  if(Math.hypot(P.x-c.position.x,P.z-c.position.z)<1.3){scene.remove(c);cores.splice(i,1);got++;hunt=10;tone(660,1320,.5,.25);
-   if(got===GOAL){pillar.material.color.set(0x22ff66);exitLight.color.set(0x22ff66);say('The gate is open — RUN to the green light!')}
-   else say(`Core ${got}/${GOAL} — the hum echoes... Verity is coming!`)}}
- if(Math.hypot(P.x-exit[0]*T,P.z-exit[1]*T)<1.5){
-  if(got>=GOAL){state='win';document.exitPointerLock();setTimeout(()=>screen('YOU ESCAPED','You slipped through the gate as Verity\'s footsteps faded behind you.','PLAY AGAIN'),300)}
-  else say(`The gate is sealed. ${GOAL-got} core${GOAL-got>1?'s':''} missing.`,1500)}
-
- hb-=dt;if(hb<=0){if(vd<24){tone(60,35,.25,.9);hb=.3+vd/30}else hb=1}
- torch.intensity=vd<10&&Math.random()<(10-vd)/25?20+Math.random()*40:90;
- $('red').style.opacity=Math.max(0,Math.min(.55,1-vd/10));
- $('st').style.width=stam+'%';$('st').style.background=tired?'#733':'#c33';
- $('obj').textContent=got<GOAL?`Find the power cores: ${got}/${GOAL}`:'Exit unlocked — reach the green light!';
-
- const px=Math.round(P.x/T),pz=Math.round(P.z/T);
- for(let a=-2;a<=2;a++)for(let b=-2;b<=2;b++)if(exp[pz+b])exp[pz+b][px+a]=true;
- mc.clearRect(0,0,150,150);const s=150/W;
- for(let z=0;z<W;z++)for(let x=0;x<W;x++)if(exp[z][x]){mc.fillStyle=g[z][x]?'#151515':'#4a3a3a';mc.fillRect(x*s,z*s,s,s)}
- if(exp[exit[1]][exit[0]]){mc.fillStyle=got>=GOAL?'#2f6':'#f33';mc.fillRect(exit[0]*s,exit[1]*s,s,s)}
- mc.fillStyle='#3fe';cores.forEach(c=>{if(exp[c.tz][c.tx])mc.fillRect(c.tx*s+1,c.tz*s+1,s-2,s-2)});
- const ux=P.x/T*s+s/2,uz=P.z/T*s+s/2;mc.fillStyle='#fff';mc.fillRect(ux-2,uz-2,4,4);
- mc.strokeStyle='#fff';mc.beginPath();mc.moveTo(ux,uz);mc.lineTo(ux-Math.sin(yaw)*9,uz-Math.cos(yaw)*9);mc.stroke()}
-
-/* ---------- main loop ---------- */
-const clock=new THREE.Clock();
-$('b').disabled=false;$('b').textContent='ENTER THE MAZE';
-cam.position.set(P.x,1.6,P.z);cam.rotation.set(0,yaw,0);
-R.setAnimationLoop(()=>{
- const dt=Math.min(clock.getDelta(),.05);aMix?.update(dt);vMix?.update(dt);
- if(state==='play')tick(dt);
- else if(state==='dead'){deadT+=dt;cam.lookAt(V.position.x,1.7,V.position.z)}
- R.render(scene,cam)});
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x020308); scene.fog=new THREE.FogExp2(0x03040a,.035);
+const camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.08,180);
+camera.position.set(0,1.65,0);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.8;
+$('game').appendChild(renderer.domElement);
+const controls=new PointerLockControls(camera,renderer.domElement);
+const loader=new GLTFLoader(); const clock=new THREE.Clock();
+scene.add(new THREE.HemisphereLight(0x53627a,0x08060b,.35));
+const ambient=new THREE.AmbientLight(0x273148,.22);scene.add(ambient);
+const flashlight=new THREE.SpotLight(0xdce7ff,95,27,Math.PI/7,.42,1.5);
+flashlight.position.set(0,0,0);flashlight.target.position.set(0,0,-1);camera.add(flashlight,flashlight.target);scene.add(camera);
+const wallMat=new THREE.MeshStandardMaterial({color:0x242630,roughness:.95});
+const floorMat=new THREE.MeshStandardMaterial({color:0x11131b,roughness:1});
+const ceilMat=new THREE.MeshStandardMaterial({color:0x090a10,roughness:1});
+const glowMat=new THREE.MeshStandardMaterial({color:0x5b91ff,emissive:0x163cbb,emissiveIntensity:2.2,roughness:.3});
+const fuseMat=new THREE.MeshStandardMaterial({color:0xffd68a,emissive:0xb85a08,emissiveIntensity:2.4});
+const CELL=6, N=19, HALF=(N-1)/2, WALLH=4.3, WALLT=.28;
+const cells=Array.from({length:N},()=>Array.from({length:N},()=>({visited:false,w:[true,true,true,true]}))); // N,E,S,W
+const dirs=[[-1,0,0,2],[0,1,1,3],[1,0,2,0],[0,-1,3,1]];
+function carve(r,c){cells[r][c].visited=true;let ds=dirs.slice().sort(()=>Math.random()-.5);for(const [dr,dc,wi,oi] of ds){let nr=r+dr,nc=c+dc;if(nr<0||nc<0||nr>=N||nc>=N||cells[nr][nc].visited)continue;cells[r][c].w[wi]=false;cells[nr][nc].w[oi]=false;carve(nr,nc)}}
+carve(0,0);
+function world(r,c){return new THREE.Vector3((c-HALF)*CELL,0,(r-HALF)*CELL)}
+function box(x,y,z,sx,sy,sz,mat){let m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);return m}
+for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+ const p=world(r,c);box(p.x,-.18,p.z,CELL,.35,CELL,floorMat);box(p.x,WALLH+.15,p.z,CELL,.3,CELL,ceilMat);
+ const w=cells[r][c].w;
+ if(w[0])box(p.x,WALLH/2,p.z-CELL/2,CELL+WALLT,WALLH,WALLT,wallMat);
+ if(w[1])box(p.x+CELL/2,WALLH/2,p.z,WALLT,WALLH,CELL+WALLT,wallMat);
+ if(w[2])box(p.x,WALLH/2,p.z+CELL/2,CELL+WALLT,WALLH,WALLT,wallMat);
+ if(w[3])box(p.x-CELL/2,WALLH/2,p.z,WALLT,WALLH,CELL+WALLT,wallMat);
+}
+// corridor flicker lamps, occasional red emergency lamps
+for(let r=1;r<N;r+=4)for(let c=1;c<N;c+=4){if(!cells[r][c].visited)continue;let p=world(r,c);let lamp=new THREE.PointLight(Math.random()<.25?0xff3344:0x6b8eff,Math.random()<.25?1.2:1.0,8);lamp.position.set(p.x,3.7,p.z);scene.add(lamp);box(p.x,4.12,p.z,.45,.08,.45,glowMat)}
+const openCells=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(cells[r][c].visited)openCells.push({r,c});
+function distance(a,b){return Math.abs(a.r-b.r)+Math.abs(a.c-b.c)}
+const spawn={r:0,c:0};camera.position.set(world(spawn.r,spawn.c).x,1.65,world(spawn.r,spawn.c).z);
+let far=openCells.filter(p=>distance(p,spawn)>20).sort((a,b)=>distance(b,spawn)-distance(a,spawn));
+const exitCell=far[0]||openCells[openCells.length-1];
+let candidates=openCells.filter(p=>distance(p,spawn)>5&&distance(p,exitCell)>4).sort(()=>Math.random()-.5);
+const fuseCells=candidates.slice(0,3);let found=0,ended=false,started=false;
+const fuses=[];
+for(const p of fuseCells){const v=world(p.r,p.c);let g=new THREE.Group();let core=new THREE.Mesh(new THREE.BoxGeometry(.25,.65,.25),fuseMat);g.add(core);let ring=new THREE.Mesh(new THREE.TorusGeometry(.5,.045,8,20),new THREE.MeshStandardMaterial({color:0xffc66e,emissive:0x7c3400,emissiveIntensity:1.4}));ring.rotation.x=Math.PI/2;g.add(ring);g.position.set(v.x,1.15,v.z);scene.add(g);const l=new THREE.PointLight(0xffaa44,1.5,5);l.position.copy(g.position);scene.add(l);fuses.push({p,g,got:false})}
+const ep=world(exitCell.r,exitCell.c);const exitGroup=new THREE.Group();exitGroup.position.set(ep.x,0,ep.z);scene.add(exitGroup);
+const portal=new THREE.Mesh(new THREE.TorusGeometry(1.25,.12,12,32),new THREE.MeshStandardMaterial({color:0x4e8cff,emissive:0x173bff,emissiveIntensity:1.5}));portal.position.y=1.8;exitGroup.add(portal);
+const portalCore=new THREE.PointLight(0x3377ff,3,10);portalCore.position.y=2;exitGroup.add(portalCore);
+box(ep.x,0.02,ep.z,3,.05,3,new THREE.MeshStandardMaterial({color:0x111b30,emissive:0x071c4a,emissiveIntensity:.6}));
+let exitUnlocked=false;
+function updateObjective(){$('objText').textContent=found<3?`Recover relay fuses: ${found}/3. The exit beacon is still offline.`:exitUnlocked?`Exit unlocked. Reach the blue beacon and press E.`:`All fuses recovered. Reach the exit beacon.`}
+updateObjective();
+// load camera-attached arms and their authored relax animation
+let armsRoot=null,armsMixer=null;
+loader.load('./assets/psx_first_person_arms.glb',gltf=>{
+ armsRoot=new THREE.Group();armsRoot.add(gltf.scene);camera.add(armsRoot);
+ // First-person arm model authored around origin: adjust this mount if your export differs.
+ armsRoot.position.set(0,-.78,-.62);armsRoot.rotation.set(0,0,0);armsRoot.scale.setScalar(1.0);
+ armsMixer=new THREE.AnimationMixer(gltf.scene);
+ const clip=gltf.animations.find(a=>a.name==='ArmsRig|relax')||gltf.animations.find(a=>a.name.toLowerCase().includes('relax'));
+ if(clip){const action=armsMixer.clipAction(clip);action.setLoop(THREE.LoopRepeat,Infinity);action.play()}
+},undefined,e=>console.warn('arms GLB failed to load',e));
+// Verity
+let monster=null,monsterMixer=null,monsterAction=null,monsterCell={r:Math.min(3,N-1),c:Math.min(3,N-1)},monsterPos=new THREE.Vector3(),monsterSpeed=2.25;
+const monsterLight=new THREE.PointLight(0x8d132a,1.2,5);
+loader.load('./assets/veritytm.glb',gltf=>{
+ monster=gltf.scene;scene.add(monster);
+ const b=new THREE.Box3().setFromObject(monster),size=b.getSize(new THREE.Vector3()),center=b.getCenter(new THREE.Vector3());
+ // normalize model to a roughly 3.4-unit tall creature, retaining authored orientation
+ monster.scale.setScalar(3.4/Math.max(size.y,size.x,size.z));
+ monster.position.sub(center.multiplyScalar(monster.scale.x));monster.position.y+=1.7;
+ monsterMixer=new THREE.AnimationMixer(monster);
+ const clip=gltf.animations.find(a=>a.name==='verity.mdl|verity.mdl/@CWalk')||gltf.animations.find(a=>a.name.includes('@CWalk'));
+ if(clip){monsterAction=monsterMixer.clipAction(clip);monsterAction.setLoop(THREE.LoopRepeat,Infinity);monsterAction.play()}
+ monster.position.set(world(monsterCell.r,monsterCell.c).x,0,world(monsterCell.r,monsterCell.c).z);monster.add(monsterLight);monsterLight.position.set(0,1.8,0);
+},undefined,e=>console.warn('verity GLB failed to load',e));
+// BFS over carved passages to let monster navigate corridors
+function pathfind(start,goal){let q=[start],prev=new Map([[`${start.r},${start.c}`,null]]);while(q.length){let a=q.shift();if(a.r===goal.r&&a.c===goal.c)break;for(const [dr,dc,wi] of dirs){let nr=a.r+dr,nc=a.c+dc;if(nr<0||nc<0||nr>=N||nc>=N||cells[a.r][a.c].w[wi])continue;let k=`${nr},${nc}`;if(!prev.has(k)){prev.set(k,a);q.push({r:nr,c:nc})}}}let k=`${goal.r},${goal.c}`;if(!prev.has(k))return[];let route=[];while(k){let [r,c]=k.split(',').map(Number);route.push({r,c});let p=prev.get(k);k=p?`${p.r},${p.c}`:null}return route.reverse()}
+let path=[],pathTimer=0,noise=0,flashTimer=0;
+const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();if(e.code==='KeyE')interact()});
+addEventListener('keyup',e=>keys[e.code]=false);
+document.querySelectorAll('#mobile button').forEach(b=>{let k=b.dataset.key;b.addEventListener('touchstart',e=>{e.preventDefault();keys[k]=true});b.addEventListener('touchend',e=>{e.preventDefault();keys[k]=false})});
+renderer.domElement.addEventListener('click',()=>{if(started&&!ended&&!controls.isLocked)controls.lock()});
+$('start').onclick=()=>{started=true;$('intro').style.display='none';controls.lock()};
+$('again').onclick=()=>location.reload();
+controls.addEventListener('lock',()=>{$('intro').style.display='none'});
+controls.addEventListener('unlock',()=>{if(started&&!ended)$('intro').style.display='flex'});
+function currentCell(){return {r:Math.max(0,Math.min(N-1,Math.round(camera.position.z/CELL+HALF))),c:Math.max(0,Math.min(N-1,Math.round(camera.position.x/CELL+HALF)))}}
+function interact(){if(ended||!started)return;let pos=camera.position;for(const f of fuses){if(!f.got&&pos.distanceTo(f.g.position)<2.3){f.got=true;scene.remove(f.g);found++;$('signal').textContent=String(found+1).padStart(2,'0');updateObjective();noise=2.4;return}}if(found>=3&&pos.distanceTo(new THREE.Vector3(ep.x,1.5,ep.z))<3){win()}}
+function win(){ended=true;controls.unlock();$('ending').style.display='flex';$('endTitle').textContent='YOU ESCAPED';$('endText').textContent='Relay restored. The maze falls silent. You made it out.'}
+function lose(){ended=true;controls.unlock();$('ending').style.display='flex';$('endTitle').textContent='VERITY FOUND YOU';$('endText').textContent='The signal cuts to static. Try another route, and keep moving.'}
+const ray=new THREE.Raycaster();ray.far=1.05;
+function blocked(dir){ray.set(camera.position,dir);return ray.intersectObjects(scene.children,true).some(hit=>hit.distance<.48&&hit.object.isMesh&&hit.object!==portal)}
+function movePlayer(dt){let f=Number(keys.KeyW||keys.ArrowUp)-Number(keys.KeyS||keys.ArrowDown),s=Number(keys.KeyD||keys.ArrowRight)-Number(keys.KeyA||keys.ArrowLeft);if(!f&&!s)return;let speed=(keys.ShiftLeft||keys.ShiftRight?5.2:3.15)*dt;noise=keys.ShiftLeft||keys.ShiftRight?1.3:.3;const forward=new THREE.Vector3();camera.getWorldDirection(forward);forward.y=0;forward.normalize();const right=new THREE.Vector3().crossVectors(forward,camera.up).normalize();let move=forward.multiplyScalar(f*speed).add(right.multiplyScalar(s*speed));let dx=new THREE.Vector3(move.x,0,0),dz=new THREE.Vector3(0,0,move.z);if(dx.length()&&!blocked(dx.clone().normalize()))camera.position.x+=dx.x;if(dz.length()&&!blocked(dz.clone().normalize()))camera.position.z+=dz.z}
+function monsterUpdate(dt){if(!monster)return;pathTimer-=dt;if(pathTimer<=0){path=pathfind(monsterCell,currentCell());pathTimer=.42}if(path.length>1){let target=world(path[1].r,path[1].c);target.y=0;let current=new THREE.Vector3(monster.position.x,0,monster.position.z);let d=target.clone().sub(current);if(d.length()<.45){monsterCell=path[1];path.shift()}else{d.normalize();monster.position.x+=d.x*monsterSpeed*dt;monster.position.z+=d.z*monsterSpeed*dt;monster.rotation.y=Math.atan2(d.x,d.z)}}let dist=monster.position.distanceTo(new THREE.Vector3(camera.position.x,0,camera.position.z));monsterSpeed=2.0+found*.22+noise*.65;if(dist<1.55)lose();$('danger').classList.toggle('active',dist<8);if(dist<8){flashTimer+=dt;scene.fog.density=.035+Math.sin(flashTimer*8)*.004}else scene.fog.density=.035}
+function promptUpdate(){let show=false;for(const f of fuses)if(!f.got&&camera.position.distanceTo(f.g.position)<2.3)show=true;if(found>=3&&camera.position.distanceTo(new THREE.Vector3(ep.x,1.5,ep.z))<3)show=true;$('prompt').style.display=show?'block':'none';$('prompt').textContent=found>=3&&camera.position.distanceTo(new THREE.Vector3(ep.x,1.5,ep.z))<3?'[ E ] ACTIVATE EXIT':'[ E ] TAKE FUSE'}
+function animate(){requestAnimationFrame(animate);let dt=Math.min(clock.getDelta(),.05);if(started&&!ended&&controls.isLocked){movePlayer(dt);monsterUpdate(dt);promptUpdate()}if(armsMixer)armsMixer.update(dt);if(monsterMixer)monsterMixer.update(dt);fuses.forEach(f=>{if(!f.got){f.g.rotation.y+=dt*.8;f.g.position.y=1.15+Math.sin(clock.elapsedTime*2)*.08}});portal.rotation.z+=dt*.35;renderer.render(scene,camera)}
+animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 </body>
 </html>
